@@ -21,7 +21,6 @@ class LuaExecutor {
         val err = CappedOutput(1024 * 1024) { onOutput("stderr", it) }
         return try {
             val globals = JsePlatform.standardGlobals()
-            // Remove JVM escape hatches. This is defense in depth, not a native-code sandbox.
             globals.set("luajava", LuaValue.NIL)
             globals.set("io", LuaValue.NIL)
             globals.set("os", LuaValue.NIL)
@@ -68,8 +67,7 @@ class LuaExecutor {
                 }
             })
             val started = System.nanoTime()
-            val chunk = globals.loadfile(script.absolutePath)
-            val values = chunk.invoke()
+            val values = globals.loadfile(script.absolutePath).invoke()
             if (TimeUnitCompat.elapsedMillis(started) > timeoutMillis) Result(null, 124, "EXECUTION_TIMEOUT", "Execution deadline exceeded")
             else Result(serialize(values), 0)
         } catch (e: LuaError) {
@@ -86,8 +84,7 @@ class LuaExecutor {
     }
 
     private fun safeName(name: String) = name.isNotBlank() && name.length <= 128 &&
-        name != "." && name != ".." && !name.contains("..") && !name.contains('/') &&
-        !name.contains('\\') && !name.contains('\u0000')
+        name != "." && name != ".." && !name.contains("..") && !name.contains('/') && !name.contains('\\')
 
     private fun serialize(values: Varargs): String {
         if (values.narg() == 0 || values.arg1().isnil()) return "null"
@@ -100,7 +97,8 @@ class LuaExecutor {
                 v.isstring() -> v.tojstring().take(256 * 1024)
                 v.istable() -> {
                     require(seen.add(v)) { "Cyclic Lua table cannot be serialized" }
-                    val entries = v.checktable().keys().asSequence().toList()
+                    val keyArgs = v.checktable().keys()
+                    val entries = (1..keyArgs.narg()).map { keyArgs.arg(it) }
                     val array = entries.all { it.isnumber() && it.todouble() >= 1 && it.todouble() % 1.0 == 0.0 }
                     val result: Any = if (array) JSONArray().apply {
                         val max = entries.maxOfOrNull { it.toint() } ?: 0
