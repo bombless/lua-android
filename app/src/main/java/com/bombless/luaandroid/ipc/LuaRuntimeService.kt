@@ -13,11 +13,11 @@ class LuaRuntimeService:Service() {
  private val callbacks=ConcurrentHashMap<String,RemoteCallbackList<IJobCallback>>()
  private val futures=ConcurrentHashMap<String,java.util.concurrent.Future<*>>()
  private val engine=LuaEngine()
- override fun onCreate(){super.onCreate();store=JobStore(this)}
+ override fun onCreate(){super.onCreate();store=JobStore(this);store.recoverAndPrune()}
  override fun onBind(intent:Intent?):IBinder=binder
  private val binder=object:ILuaRuntimeService.Stub(){
   override fun getApiVersion()=1
-  override fun getRuntimeInfo()="{\"engine\":\"LuaJ 3.0.1\",\"luaCompatibility\":\"5.2\",\"nativeModules\":false,\"rockTree\":\"files/lua/rocks\"}"
+  override fun getRuntimeInfo()="{\\"engine\\":\\"LuaJ 3.0.1\\",\\"luaCompatibility\\":\\"5.2\\",\\"nativeModules\\":false,\\"rockTree\\":\\"files/lua/rocks\\"}"
   override fun submit(request:JobRequest):String {
    authorize();require(request.apiVersion==1){"API_VERSION_MISMATCH"}
    require((request.source!=null) xor (request.scriptFd!=null)){"INVALID_REQUEST"}
