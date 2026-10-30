@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <permission android:name="com.bombless.luaandroid.permission.USE_LUA_RUNTIME" android:protectionLevel="normal" />
+    <application android:allowBackup="false" android:label="Lua Android" android:supportsRtl="true">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
+        </activity>
+        <service android:name=".ipc.LuaRuntimeService" android:exported="true" android:permission="com.bombless.luaandroid.permission.USE_LUA_RUNTIME">
+            <intent-filter><action android:name="com.bombless.luaandroid.action.BIND_RUNTIME" /></intent-filter>
+        </service>
+        <!-- PFD is the public result transport in v1; keep the optional URI provider private. -->
+        <provider android:name=".ipc.ResultProvider" android:authorities="com.bombless.luaandroid.results" android:exported="false" android:grantUriPermissions="true" />
+    </application>
+</manifest>
