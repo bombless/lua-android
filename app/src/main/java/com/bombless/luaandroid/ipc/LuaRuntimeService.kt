@@ -32,7 +32,9 @@ class LuaRuntimeService:Service() {
   }
   override fun getJob(jobId:String):JobInfo? {authorize();return owned(jobId)?.first}
   override fun listJobs(limit:Int,beforeCreatedAtMillis:Long):MutableList<JobInfo>{
-   authorize();require(limit in 1..100);return store.list(limit,beforeCreatedAtMillis).filter{owned(it.jobId)!=null}.toMutableList()
+   authorize();require(limit in 1..100)
+   val caller=Binder.getCallingUid()
+   return store.list(1000,beforeCreatedAtMillis).filter{store.read(it.jobId)?.second==caller}.take(limit).toMutableList()
   }
   override fun cancel(jobId:String):Boolean {
    authorize();val pair=owned(jobId)?:return false;val old=pair.first
@@ -51,11 +53,11 @@ class LuaRuntimeService:Service() {
    return ParcelFileDescriptor.open(file,ParcelFileDescriptor.MODE_READ_ONLY)
   }
  }
- private fun authorize(){if(Binder.getCallingUid()==Process.myUid())return}
+ private fun authorize(){if(Binder.getCallingUid()==android.os.Process.myUid())return}
  private fun owned(id:String):Pair<JobInfo,Int>? {val pair=store.read(id)?:return null;if(pair.second!=Binder.getCallingUid())throw SecurityException("UNAUTHORIZED_CALLER");return pair}
  private fun readScript(fd:ParcelFileDescriptor):String {
   val output=java.io.ByteArrayOutputStream()
-  ParcelFileDescriptor.AutoCloseInputStream(fd.dup()).use{input->val buffer=ByteArray(8192);while(true){val n=input.read(buffer);if(n<0)break;require(output.size()+n<=262144){"INPUT_TOO_LARGE"};output.write(buffer,0,n)}}
+  ParcelFileDescriptor.AutoCloseInputStream(fd).use{input->val buffer=ByteArray(8192);while(true){val n=input.read(buffer);if(n<0)break;require(output.size()+n<=262144){"INPUT_TOO_LARGE"};output.write(buffer,0,n)}}
   return output.toString("UTF-8")
  }
  private fun execute(id:String,source:String,timeout:Long){
@@ -65,7 +67,7 @@ class LuaRuntimeService:Service() {
   try {
    val executor=Executors.newSingleThreadExecutor()
    val running=executor.submit<RunResult>{engine.run(source,1024*1024)}
-   val result=try{running.get(timeout,TimeUnit.MILLISECONDS)}finally{executor.shutdownNow()}
+   val result=try{running.get(timeout,TimeUnit.MILLISECONDS)}catch(e:java.util.concurrent.TimeoutException){running.cancel(true);throw e}finally{executor.shutdownNow()}
    val stdout=File(store.dir(id),"stdout.txt");stdout.writeText(result.stdout)
    info=info.copy(state="SUCCEEDED",finishedAtMillis=System.currentTimeMillis(),exitCode=0,returnValueJson=result.result,
     stdoutBytes=stdout.length(),artifacts=arrayOf(ArtifactInfo("stdout","stdout.txt","text/plain; charset=utf-8",stdout.length())))
@@ -76,7 +78,9 @@ class LuaRuntimeService:Service() {
   } catch(e:Throwable) {
    info=info.copy(state="FAILED",finishedAtMillis=System.currentTimeMillis(),errorCode="SCRIPT_RUNTIME_ERROR",errorMessage=(e.message?:e.javaClass.simpleName).take(1024))
   }
-  store.save(info,uid);notify(info);futures.remove(id)
+  val latest=store.read(id)?.first
+  if(latest?.state !in terminal){store.save(info,uid);notify(info)}
+  futures.remove(id)
  }
  private fun notify(info:JobInfo){val list=callbacks[info.jobId]?:return;val count=list.beginBroadcast();try{for(i in 0 until count)runCatching{list.getBroadcastItem(i).onJobChanged(info)}}finally{list.finishBroadcast()}}
  override fun onDestroy(){pool.shutdownNow();super.onDestroy()}
