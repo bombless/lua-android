@@ -11,7 +11,13 @@ import java.io.File
 import java.nio.charset.StandardCharsets
 
 class LuaExecutor {
-    data class Result(val json: String?, val exitCode: Int, val errorCode: String? = null, val error: String? = null)
+    data class Result(
+        val json: String?,
+        val exitCode: Int,
+        val errorCode: String? = null,
+        val error: String? = null,
+        val truncated: Boolean = false
+    )
 
     fun execute(script: File, jobDir: File, args: Array<String>, env: Map<String, String>, timeoutMillis: Long,
                 onOutput: (String, ByteArray) -> Unit): Result {
@@ -68,15 +74,23 @@ class LuaExecutor {
             })
             val started = System.nanoTime()
             val values = globals.loadfile(script.absolutePath).invoke()
-            if (TimeUnitCompat.elapsedMillis(started) > timeoutMillis) Result(null, 124, "EXECUTION_TIMEOUT", "Execution deadline exceeded")
-            else Result(serialize(values), 0)
+            if (TimeUnitCompat.elapsedMillis(started) > timeoutMillis) {
+                Result(null, 124, "EXECUTION_TIMEOUT", "Execution deadline exceeded", out.truncated || err.truncated)
+            } else {
+                val json = try {
+                    serialize(values)
+                } catch (e: Throwable) {
+                    return Result(null, 1, "RESULT_SERIALIZATION_ERROR", e.message, out.truncated || err.truncated)
+                }
+                Result(json, 0, truncated = out.truncated || err.truncated)
+            }
         } catch (e: LuaError) {
             val compile = e.message?.contains("compile", true) == true
             err.write((e.message ?: "Lua error").toByteArray())
-            Result(null, 1, if (compile) "SCRIPT_COMPILE_ERROR" else "SCRIPT_RUNTIME_ERROR", e.message)
+            Result(null, 1, if (compile) "SCRIPT_COMPILE_ERROR" else "SCRIPT_RUNTIME_ERROR", e.message, out.truncated || err.truncated)
         } catch (e: Throwable) {
             err.write((e.message ?: e.javaClass.simpleName).toByteArray())
-            Result(null, 1, "INTERNAL_ERROR", e.message)
+            Result(null, 1, "INTERNAL_ERROR", e.message, out.truncated || err.truncated)
         } finally {
             stdout.writeBytes(out.bytes())
             stderr.writeBytes(err.bytes())
@@ -87,14 +101,18 @@ class LuaExecutor {
         name != "." && name != ".." && !name.contains("..") && !name.contains('/') && !name.contains('\\')
 
     private fun serialize(values: Varargs): String {
-        if (values.narg() == 0 || values.arg1().isnil()) return "null"
+        if (values.narg() == 0) return "null"
         fun convert(v: LuaValue, seen: MutableSet<LuaValue>, depth: Int): Any? {
             require(depth <= 32) { "RESULT_TOO_LARGE: nesting limit" }
             return when {
                 v.isnil() -> null
                 v.isboolean() -> v.toboolean()
                 v.isnumber() -> v.todouble().takeIf { it.isFinite() } ?: error("Non-finite number")
-                v.isstring() -> v.tojstring().take(256 * 1024)
+                v.isstring() -> v.tojstring().also {
+                    require(it.toByteArray(StandardCharsets.UTF_8).size <= 256 * 1024) {
+                        "RESULT_TOO_LARGE: string exceeds 256 KiB"
+                    }
+                }
                 v.istable() -> {
                     require(seen.add(v)) { "Cyclic Lua table cannot be serialized" }
                     val keyArgs = v.checktable().keys()
@@ -116,16 +134,31 @@ class LuaExecutor {
                 else -> error("Unsupported Lua value type: ${v.typename()}")
             }
         }
-        return JSONObject.wrap(convert(values.arg1(), mutableSetOf(), 0))?.toString() ?: "null"
+        val seen = mutableSetOf<LuaValue>()
+        val result: Any? = if (values.narg() == 1) {
+            convert(values.arg1(), seen, 0)
+        } else {
+            JSONArray().apply {
+                for (index in 1..values.narg()) put(convert(values.arg(index), seen, 0))
+            }
+        }
+        val json = JSONObject.wrap(result)?.toString() ?: "null"
+        require(json.toByteArray(StandardCharsets.UTF_8).size <= 256 * 1024) {
+            "RESULT_TOO_LARGE: serialized result exceeds 256 KiB"
+        }
+        return json
     }
 
     private class CappedOutput(private val cap: Int, private val sink: (ByteArray) -> Unit) {
         private val buffer = java.io.ByteArrayOutputStream()
+        var truncated: Boolean = false
+            private set
         fun write(b: ByteArray) {
             val remaining = (cap - buffer.size()).coerceAtLeast(0)
             val count = minOf(remaining, b.size)
             if (count > 0) buffer.write(b, 0, count)
             if (count > 0) sink(b.copyOf(count))
+            if (count < b.size) truncated = true
         }
         fun bytes() = buffer.toByteArray()
     }

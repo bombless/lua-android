@@ -44,8 +44,29 @@ class JobStore(private val context: Context) {
         val file = File(dir, "job.json")
         val tmp = File(dir, "job.json.tmp")
         tmp.writeText(encode(info).toString())
-        if (!tmp.renameTo(file)) { file.writeText(tmp.readText()); tmp.delete() }
+        if (!tmp.renameTo(file)) {
+            file.writeText(tmp.readText())
+            tmp.delete()
+        }
         cache[info.jobId] = info
+    }
+
+    /**
+     * Atomically applies a state transition only while the persisted job is in
+     * one of [expectedStates]. This prevents cancel/start/finish races from
+     * resurrecting a terminal job or overwriting a completed result.
+     */
+    @Synchronized fun transition(
+        id: String,
+        expectedStates: Set<String>,
+        transform: (JobInfo) -> JobInfo
+    ): JobInfo? {
+        val current = get(id) ?: return null
+        if (current.state !in expectedStates) return null
+        val updated = transform(current)
+        require(updated.jobId == current.jobId) { "Job ID cannot change" }
+        save(updated)
+        return updated
     }
 
     fun artifacts(id: String): List<ArtifactInfo> {

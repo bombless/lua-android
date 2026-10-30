@@ -61,11 +61,12 @@ class LuaRuntimeService : Service() {
         }
         override fun cancel(jobId: String): Boolean {
             enforceCaller()
-            val info = store.get(jobId) ?: return false
-            if (info.state !in setOf("QUEUED", "RUNNING")) return false
+            val cancelled = store.transition(jobId, setOf("QUEUED", "RUNNING")) {
+                it.copy(state = "CANCELLED", finishedAtMillis = System.currentTimeMillis(),
+                    errorCode = "EXECUTION_CANCELLED", errorMessage = "Cancellation requested")
+            } ?: return false
             running[jobId]?.interrupt()
-            publish(info.copy(state = "CANCELLED", finishedAtMillis = System.currentTimeMillis(),
-                errorCode = "EXECUTION_CANCELLED", errorMessage = "Cancellation requested"))
+            notifyCallbacks(cancelled)
             return true
         }
         override fun registerCallback(jobId: String, callback: IJobCallback) {
@@ -124,32 +125,41 @@ class LuaRuntimeService : Service() {
 
     private fun runJob(id: String, dir: File, args: Array<String>, env: Map<String, String>, timeout: Long) {
         try {
-            var info = store.get(id) ?: return
-            if (info.state == "CANCELLED") return
-            info = info.copy(state = "RUNNING", startedAtMillis = System.currentTimeMillis())
-            publish(info)
+            val info = store.transition(id, setOf("QUEUED")) {
+                it.copy(state = "RUNNING", startedAtMillis = System.currentTimeMillis())
+            } ?: return
+            notifyCallbacks(info)
             running[id] = Thread.currentThread()
             // Cancellation may race with worker startup; never start Lua after terminalization.
-            if (store.get(id)?.state != "RUNNING") return
+            if (store.get(id)?.state != "RUNNING" || Thread.currentThread().isInterrupted) return
             val result = lua.execute(File(dir, "script.lua"), dir, args, env, timeout) { _, _ -> }
-            val current = store.get(id) ?: return
-            if (current.state == "CANCELLED") return
             val state = when (result.errorCode) {
                 "EXECUTION_TIMEOUT" -> "TIMED_OUT"
                 null -> "SUCCEEDED"
                 else -> "FAILED"
             }
-            publish(current.copy(state = state, finishedAtMillis = System.currentTimeMillis(),
-                exitCode = result.exitCode, returnValueJson = result.json,
-                stdoutBytes = File(dir, "output/stdout.txt").length(), stderrBytes = File(dir, "output/stderr.txt").length(),
-                errorCode = result.errorCode, errorMessage = result.error,
-                artifacts = store.artifacts(id).toTypedArray()))
+            val finished = store.transition(id, setOf("RUNNING")) {
+                it.copy(state = state, finishedAtMillis = System.currentTimeMillis(),
+                    exitCode = result.exitCode, returnValueJson = result.json,
+                    stdoutBytes = File(dir, "output/stdout.txt").length(), stderrBytes = File(dir, "output/stderr.txt").length(),
+                    truncated = result.truncated,
+                    errorCode = result.errorCode, errorMessage = result.error,
+                    artifacts = store.artifacts(id).toTypedArray())
+            }
+            if (finished != null) notifyCallbacks(finished)
         } finally { running.remove(id); slots.release() }
     }
 
     private fun publish(info: JobInfo) {
         store.save(info)
-        callbacks[info.jobId]?.toList()?.forEach { cb -> runCatching { cb.onJobChanged(info) }.onFailure { callbacks[info.jobId]?.remove(cb) } }
+        notifyCallbacks(info)
+    }
+
+    private fun notifyCallbacks(info: JobInfo) {
+        callbacks[info.jobId]?.toList()?.forEach { cb ->
+            runCatching { cb.onJobChanged(info) }
+                .onFailure { callbacks[info.jobId]?.remove(cb) }
+        }
     }
 
     override fun onDestroy() { executor.shutdownNow(); super.onDestroy() }
