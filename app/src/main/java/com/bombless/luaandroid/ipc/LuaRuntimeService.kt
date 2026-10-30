@@ -2,12 +2,10 @@ package com.bombless.luaandroid.ipc
 
 import android.app.Service
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.os.Binder
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
 import android.os.Process
-import android.net.Uri
 import com.bombless.luaandroid.core.JobStore
 import com.bombless.luaandroid.core.LuaExecutor
 import java.io.File
@@ -16,7 +14,6 @@ import java.io.FileOutputStream
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.Semaphore
-import java.util.concurrent.TimeUnit
 
 class LuaRuntimeService : Service() {
     private lateinit var store: JobStore
@@ -30,7 +27,6 @@ class LuaRuntimeService : Service() {
         super.onCreate()
         store = JobStore(this)
         store.cleanup()
-        // A process restart cannot resume a VM; queued/running jobs are made explicitly failed.
         store.list(100, 0).filter { it.state == "QUEUED" || it.state == "RUNNING" }.forEach {
             publish(it.copy(state = "FAILED", finishedAtMillis = System.currentTimeMillis(),
                 errorCode = "SERVICE_RESTARTED", errorMessage = "Execution interrupted by service process restart"))
@@ -92,8 +88,6 @@ class LuaRuntimeService : Service() {
         val uid = Binder.getCallingUid()
         if (uid == Process.myUid()) return
         val packages = packageManager.getPackagesForUid(uid).orEmpty()
-        // Default-deny external UIDs. An owner-controlled consent/allowlist UI is required before
-        // enabling third-party clients; the manifest permission is only a coarse gate.
         val allowed = getSharedPreferences("caller_policy", MODE_PRIVATE).getStringSet("allowed_packages", emptySet()).orEmpty()
         if (packages.none { it in allowed }) throw SecurityException("UNAUTHORIZED_CALLER")
     }
@@ -122,7 +116,6 @@ class LuaRuntimeService : Service() {
                 FileOutputStream(File(dir, "input/${input.name}")).use { src.copyToBounded(it, 64L * 1024 * 1024) }
             }
         }
-        // PFDs are consumed and staged synchronously before submit returns.
     }
     private fun java.io.InputStream.copyToBounded(out: FileOutputStream, max: Long) {
         val buf = ByteArray(32 * 1024); var total = 0L
@@ -136,6 +129,8 @@ class LuaRuntimeService : Service() {
             info = info.copy(state = "RUNNING", startedAtMillis = System.currentTimeMillis())
             publish(info)
             running[id] = Thread.currentThread()
+            // Cancellation may race with worker startup; never start Lua after terminalization.
+            if (store.get(id)?.state != "RUNNING") return
             val result = lua.execute(File(dir, "script.lua"), dir, args, env, timeout) { _, _ -> }
             val current = store.get(id) ?: return
             if (current.state == "CANCELLED") return

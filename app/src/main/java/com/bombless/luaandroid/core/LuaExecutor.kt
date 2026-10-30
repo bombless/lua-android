@@ -5,6 +5,7 @@ import org.json.JSONObject
 import org.luaj.vm2.LuaError
 import org.luaj.vm2.LuaValue
 import org.luaj.vm2.Varargs
+import org.luaj.vm2.lib.VarArgFunction
 import org.luaj.vm2.lib.jse.JsePlatform
 import java.io.File
 import java.nio.charset.StandardCharsets
@@ -26,10 +27,40 @@ class LuaExecutor {
             globals.set("os", LuaValue.NIL)
             globals.set("debug", LuaValue.NIL)
             globals.set("package", LuaValue.NIL)
+            globals.set("require", LuaValue.NIL)
+            globals.set("dofile", LuaValue.NIL)
             val argTable = LuaValue.tableOf()
             args.forEachIndexed { index, value -> argTable.set(index - 1, LuaValue.valueOf(value)) }
             globals.set("arg", argTable)
-            globals.set("print", object : org.luaj.vm2.lib.VarArgFunction() {
+            val envTable = LuaValue.tableOf()
+            env.forEach { (key, value) -> envTable.set(key, LuaValue.valueOf(value)) }
+            globals.set("env", envTable)
+
+            val host = LuaValue.tableOf()
+            host.set("readInput", object : VarArgFunction() {
+                override fun invoke(a: Varargs): Varargs {
+                    val name = a.arg1().checkjstring()
+                    if (!safeName(name)) return LuaValue.varargsOf(arrayOf(LuaValue.NIL, LuaValue.valueOf("INVALID_INPUT_NAME")))
+                    val file = File(File(jobDir, "input"), name)
+                    if (!file.isFile || file.length() > 8L * 1024 * 1024) return LuaValue.varargsOf(arrayOf(LuaValue.NIL, LuaValue.valueOf("INPUT_NOT_FOUND_OR_TOO_LARGE")))
+                    return LuaValue.valueOf(file.readText(Charsets.UTF_8))
+                }
+            })
+            host.set("writeFile", object : VarArgFunction() {
+                override fun invoke(a: Varargs): Varargs {
+                    val name = a.arg1().checkjstring()
+                    val content = a.arg(2).checkjstring()
+                    if (!safeName(name) || name == "stdout.txt" || name == "stderr.txt") return LuaValue.valueOf(false)
+                    val bytes = content.toByteArray(StandardCharsets.UTF_8)
+                    val output = File(jobDir, "output")
+                    val current = output.listFiles().orEmpty().filter { it.isFile && it.name != "stdout.txt" && it.name != "stderr.txt" }.sumOf { it.length() }
+                    if (bytes.size > 16 * 1024 * 1024 || current + bytes.size > 32 * 1024 * 1024) return LuaValue.valueOf(false)
+                    File(output, name).writeBytes(bytes)
+                    return LuaValue.valueOf(true)
+                }
+            })
+            globals.set("host", host)
+            globals.set("print", object : VarArgFunction() {
                 override fun invoke(a: Varargs): Varargs {
                     val line = (1..a.narg()).joinToString("\t") { a.arg(it).tojstring() } + "\n"
                     out.write(line.toByteArray(StandardCharsets.UTF_8))
@@ -53,6 +84,10 @@ class LuaExecutor {
             stderr.writeBytes(err.bytes())
         }
     }
+
+    private fun safeName(name: String) = name.isNotBlank() && name.length <= 128 &&
+        name != "." && name != ".." && !name.contains("..") && !name.contains('/') &&
+        !name.contains('\\') && !name.contains('\u0000')
 
     private fun serialize(values: Varargs): String {
         if (values.narg() == 0 || values.arg1().isnil()) return "null"

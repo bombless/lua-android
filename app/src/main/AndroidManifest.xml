@@ -11,6 +11,7 @@
         <service android:name=".ipc.LuaRuntimeService" android:exported="true" android:permission="com.bombless.luaandroid.permission.USE_LUA_RUNTIME">
             <intent-filter><action android:name="com.bombless.luaandroid.action.BIND_RUNTIME" /></intent-filter>
         </service>
-        <provider android:name=".ipc.ResultProvider" android:authorities="com.bombless.luaandroid.results" android:exported="true" android:grantUriPermissions="true" />
+        <!-- PFD is the public result transport in v1; keep the optional URI provider private. -->
+        <provider android:name=".ipc.ResultProvider" android:authorities="com.bombless.luaandroid.results" android:exported="false" android:grantUriPermissions="true" />
     </application>
 </manifest>
