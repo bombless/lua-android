@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.LuaAndroid" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
+        <item name="colorPrimary">#FF3DDC84</item>
+        <item name="colorPrimaryVariant">#FF018786</item>
+        <item name="colorOnPrimary">#FF000000</item>
+        <item name="colorSecondary">#FF03DAC5</item>
+    </style>
+</resources>

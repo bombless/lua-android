@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <permission
+        android:name="com.bombless.luaandroid.permission.USE_LUA_RUNTIME"
+        android:protectionLevel="normal"
+        android:label="Use Lua Runtime Service"
+        android:description="@string/perm_use_lua_runtime_desc" />
+
+    <uses-permission android:name="com.bombless.luaandroid.permission.USE_LUA_RUNTIME" />
+
+    <application
+        android:name=".LuaAndroidApp"
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.LuaAndroid">
+
+        <activity
+            android:name=".ui.MainActivity"
+            android:exported="true"
+            android:theme="@style/Theme.LuaAndroid">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".ipc.LuaRuntimeService"
+            android:exported="true"
+            android:permission="com.bombless.luaandroid.permission.USE_LUA_RUNTIME">
+            <intent-filter>
+                <action android:name="com.bombless.luaandroid.action.BIND_RUNTIME" />
+            </intent-filter>
+        </service>
+
+        <provider
+            android:name=".ipc.JobArtifactProvider"
+            android:authorities="com.bombless.luaandroid.artifacts"
+            android:exported="true"
+            android:grantUriPermissions="true"
+            android:permission="com.bombless.luaandroid.permission.USE_LUA_RUNTIME" />
+    </application>
+</manifest>
