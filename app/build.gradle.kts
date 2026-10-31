@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "com.bombless.luaandroid"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.bombless.luaandroid"
