@@ -21,19 +21,21 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Android SDK path
+      - name: Show Android SDK
         run: |
-          echo "ANDROID_HOME=${ANDROID_HOME:-$ANDROID_SDK_ROOT}" >> $GITHUB_ENV
-          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-$ANDROID_HOME}" >> $GITHUB_ENV
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-35" "build-tools;35.0.0" || \
-          sdkmanager "platforms;android-34" "build-tools;34.0.0"
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          ls "$ANDROID_HOME" || ls /usr/local/lib/android/sdk || true
+          echo "sdk.dir=${ANDROID_HOME:-/usr/local/lib/android/sdk}" > local.properties
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug --stacktrace
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -51,7 +53,7 @@ jobs:
             Debug APK for package `com.bombless.luaandroid.debug`.
 
             - Engine: LuaJ 3.0.1 (Lua 5.2 compatible)
-            - Min SDK 26 / Target SDK 35
+            - Min SDK 26 / Target SDK 34
             - See README.md and Manual.md for the IPC contract.
 
             Install:
