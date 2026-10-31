@@ -163,11 +163,14 @@ class LuaJobRunner(private val record: JobRecord) {
                 } else {
                     val obj = org.json.JSONObject()
                     var n = 0
-                    val keys = t.keys()
-                    while (keys.hasMoreElements() && n < 256) {
-                        val k = keys.nextElement() as LuaValue
+                    var k = LuaValue.NIL
+                    while (n < 256) {
+                        val nres = t.next(k)
+                        if (nres == LuaValue.NIL || nres.narg() < 2) break
+                        k = nres.arg(1)
+                        val val_ = nres.arg(2)
                         val keyStr = if (k.isstring() || k.isnumber()) k.tojstring() else k.typename()
-                        obj.put(keyStr, valueToJson(t.get(k)))
+                        obj.put(keyStr, valueToJson(val_))
                         n++
                     }
                     obj
