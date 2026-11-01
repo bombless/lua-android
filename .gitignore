@@ -1,0 +1,19 @@
+# Gradle / Android
+.gradle/
+build/
+local.properties
+*.iml
+.idea/
+.cxx/
+captures/
+*.apk
+*.aab
+*.aar
+# Signing material must never be committed
+*.jks
+*.keystore
+keystore.properties
+# Host test artefacts
+runner/build/
+__pycache__/
+*.pyc

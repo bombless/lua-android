@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+    tags-ignore: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  runner:
+    name: Native runner (host tests)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # failure diagnostics are posted as a commit comment
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zlib1g-dev
+      - name: Build the runner
+        shell: bash
+        run: make -C runner 2>&1 | tee build.log
+      - name: Run the runner and LuaRocks tests
+        shell: bash
+        run: make -C runner test 2>&1 | tee test.log
+      - name: Post failure diagnostics
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/ci-post-log.sh "runner tests" build.log test.log
