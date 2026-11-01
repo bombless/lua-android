@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="app_name">Lua Android</string>
-    <string name="perm_use_lua_runtime_desc">Allows the app to submit and manage Lua jobs on the Lua Android runtime service.</string>
-</resources>
