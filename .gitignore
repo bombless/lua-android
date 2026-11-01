@@ -1,6 +1,9 @@
-# Gradle / Android
+# Gradle / Android (anchored: third_party/luarocks has a directory that is literally called "build")
 .gradle/
-build/
+/build/
+/app/build/
+/ipc-api/build/
+/client-example/build/
 local.properties
 *.iml
 .idea/
@@ -14,6 +17,6 @@ captures/
 *.keystore
 keystore.properties
 # Host test artefacts
-runner/build/
+/runner/build/
 __pycache__/
 *.pyc
