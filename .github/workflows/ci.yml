@@ -53,10 +53,7 @@ jobs:
           java-version: 17
       - name: Android SDK packages
         shell: bash
-        run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;${ANDROID_NDK_VERSION}" > sdk.log 2>&1 || { tail -30 sdk.log; exit 1; }
-          echo "ORG_GRADLE_PROJECT_ndkDir=${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}" >> "$GITHUB_ENV"
+        run: scripts/ci-setup-android.sh 2>&1 | tee sdk.log
       - uses: gradle/actions/setup-gradle@v4
       - name: Unit tests, debug and release builds
         shell: bash
@@ -92,10 +89,7 @@ jobs:
           java-version: 17
       - name: Android SDK packages
         shell: bash
-        run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;${ANDROID_NDK_VERSION}" > sdk.log 2>&1 || { tail -30 sdk.log; exit 1; }
-          echo "ORG_GRADLE_PROJECT_ndkDir=${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}" >> "$GITHUB_ENV"
+        run: scripts/ci-setup-android.sh 2>&1 | tee sdk.log
       - uses: gradle/actions/setup-gradle@v4
       - name: Enable KVM
         run: |
