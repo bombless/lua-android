@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Rock downloads (LuaRocks) are performed by this app, never by scripts. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Access-request notifications (optional; the Access tab shows requests either way). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!--
+        Needed to authenticate callers: Binder.getCallingUid() -> package name + signing certificate
+        (Manual.md section 4.1). Without it Android 11+ package visibility hides the calling app.
+        This app is distributed through GitHub releases; see README "Trust model" for Play Store notes.
+    -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+
+    <!-- Normal-level gate only: it makes the service discoverable but is NOT authentication. Real access
+         control is the per-call allow-list / consent check (see security/CallerPolicy). -->
+    <permission
+        android:name="com.bombless.luaandroid.permission.USE_LUA_RUNTIME"
+        android:protectionLevel="normal" />
+
+    <application
+        android:name=".LuaApp"
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="@string/app_name"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.LuaAndroid"
+        tools:ignore="DataExtractionRules">
+
+        <activity
+            android:name=".ui.MainActivity"
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".ipc.LuaRuntimeService"
+            android:exported="true"
+            android:permission="com.bombless.luaandroid.permission.USE_LUA_RUNTIME">
+            <intent-filter>
+                <action android:name="com.bombless.luaandroid.action.BIND_RUNTIME" />
+            </intent-filter>
+        </service>
+
+        <!-- LuaRocks package management: owner-only unless the owner grants a client "manage packages". -->
+        <service
+            android:name=".ipc.LuaRocksService"
+            android:exported="true"
+            android:permission="com.bombless.luaandroid.permission.USE_LUA_RUNTIME">
+            <intent-filter>
+                <action android:name="com.bombless.luaandroid.action.BIND_ROCKS" />
+            </intent-filter>
+        </service>
+
+        <!-- Read-only access to job artifacts; not exported: callers need a URI grant for their own jobs. -->
+        <provider
+            android:name=".ipc.ResultProvider"
+            android:authorities="com.bombless.luaandroid.results"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+    </application>
+</manifest>

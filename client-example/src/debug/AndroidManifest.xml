@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Debug/test only: the instrumentation tests run a loopback LuaRocks mock server inside this app's process. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+</manifest>

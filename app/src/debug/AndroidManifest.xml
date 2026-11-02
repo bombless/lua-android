@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!--
+            DEBUG BUILDS ONLY. Lets the instrumentation tests of the example client reset the host's state,
+            play the "owner" (approve apps, submit jobs from the owner's UID) and restart-test recovery.
+            It is exported without protection on purpose and therefore must never ship: it lives in the
+            debug source set and is absent from release APKs.
+        -->
+        <provider
+            android:name=".debug.TestControlProvider"
+            android:authorities="com.bombless.luaandroid.testcontrol"
+            android:exported="true" />
+    </application>
+</manifest>

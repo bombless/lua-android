@@ -375,6 +375,24 @@ int luaopen_cmod_sub(lua_State *L) { lua_pushinteger(L, 7); return 1; }
     finally:
         shutil.rmtree(rocks, ignore_errors=True)
 
+@test
+def spec_written_by_the_kotlin_host_is_understood():
+    """runner/tests/golden/spec.lua is byte-identical to what the Kotlin LuaLiteral.spec() generates
+    (checked by LuaLiteralTest); here the real runner has to read it, including quotes, NUL and UTF-8."""
+    golden = os.path.join(harness.HERE, "golden", "spec.lua")
+    def install(job):
+        shutil.copy(golden, os.path.join(job, "spec.lua"))
+        os.makedirs(os.path.join(job, "output", "sub"), exist_ok=True)
+    r = run('return { job.id, arg[0], arg[1], arg[2], arg[3], arg[4], os.getenv("K"), os.getenv("EMPTY"), os.getenv("Z_9"), select("#", ...) }', setup=install)
+    ok(r)
+    assert r.result == ["0123456789abcdef0123456789abcdef", "my script \u00e9.lua", "a b", '"q"\\', "\u00e9\n\u0000", "", "v\\", "", "line1\nline2", 4], r.result
+    # and the Python writer used everywhere else produces exactly the golden bytes
+    tmp = tempfile.mkdtemp()
+    harness.write_spec(tmp, job_id="0123456789abcdef0123456789abcdef", script_name="my script \u00e9.lua", args=["a b", '"q"\\', "\u00e9\n\u0000", ""],
+                       env={"K": "v\\", "EMPTY": "", "Z_9": "line1\nline2"}, workdir="output/sub")
+    assert open(os.path.join(tmp, "spec.lua")).read() == open(golden).read()
+    shutil.rmtree(tmp, ignore_errors=True)
+
 # ------------------------------------------------------------------ big inputs
 @test
 def large_input_is_streamed_not_loaded():
