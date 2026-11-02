@@ -145,6 +145,9 @@ android {
 
     buildFeatures { buildConfig = true }
 
+    // Lint is not a release gate here; the vital-lint models would otherwise run on every assembleRelease.
+    lint { checkReleaseBuilds = false }
+
     // Executables must be extracted to disk (nativeLibraryDir) to be runnable.
     packaging { jniLibs { useLegacyPackaging = true } }
 
@@ -161,9 +164,13 @@ android {
     testOptions { unitTests.isReturnDefaultValues = true }
 }
 
-// Make the dependencies explicit: the merge tasks must see the runner and the staged assets.
+// Make the dependencies explicit: everything that reads the source sets (merge tasks, lint models) must see the
+// runner and the staged assets, otherwise Gradle rejects the build ("uses this output ... without declaring a dependency").
 tasks.matching { it.name.startsWith("merge") && it.name.endsWith("JniLibFolders") }.configureEach { dependsOn(buildLuaRunner) }
 tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach { dependsOn(stageRuntimeAssets) }
+tasks.configureEach {
+    if (name.contains("lint", ignoreCase = true)) dependsOn(buildLuaRunner, stageRuntimeAssets)
+}
 
 dependencies {
     implementation(project(":ipc-api"))

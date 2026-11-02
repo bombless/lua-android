@@ -112,4 +112,4 @@ jobs:
         run: |
           python3 scripts/ci-test-summary.py 'client-example/build/outputs/androidTest-results/**/*.xml' > test-summary.txt || true
           grep -iE "AndroidRuntime|FATAL|luaandroid|LuaRuntime|LuaRocks|lua-job|rocks-" logcat.txt 2>/dev/null | tail -150 > logcat-filtered.txt || true
-          scripts/ci-post-log.sh "emulator acceptance tests" test-summary.txt gradle-emulator.log logcat-filtered.txt
+          scripts/ci-post-log.sh "emulator acceptance tests" emulator-diag.txt test-summary.txt logcat-filtered.txt gradle-emulator.log
