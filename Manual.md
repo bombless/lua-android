@@ -421,3 +421,90 @@ Binder transport failures are distinct from job failures. Clients should handle 
 - Timeout and cancellation reach terminal states and clean up resources.
 - Pure-Lua LuaRocks package installation and `require()` work using the private tree.
 - Unsupported native rocks fail with an actionable error rather than crashing the host app.
+
+## 11. Published contract (API v1) and implementation status
+
+Sections 1–10 above are the design and are unchanged. This section was added with the implementation (branch `claude`, see
+[`README.md`](README.md)) and records what was actually built, in the order of the checklist in section 9.
+
+### 11.1 Published identifiers (stable within API v1)
+
+| Item | Value |
+|---|---|
+| Application ID | `com.bombless.luaandroid` |
+| minSdk / targetSdk / compileSdk | 26 (Android 8.0) / 35 / 35 |
+| Supported ABIs | `arm64-v8a`, `armeabi-v7a`, `x86_64` (one universal APK) |
+| Script runtime service | `com.bombless.luaandroid/.ipc.LuaRuntimeService`, exported, action `com.bombless.luaandroid.action.BIND_RUNTIME` |
+| Package (LuaRocks) service | `com.bombless.luaandroid/.ipc.LuaRocksService`, exported, action `com.bombless.luaandroid.action.BIND_ROCKS` |
+| Permission | `com.bombless.luaandroid.permission.USE_LUA_RUNTIME`, protection level `normal` — a discovery gate only; authorisation is the per-call check of section 4 |
+| Result provider | authority `com.bombless.luaandroid.results`, not exported, `grantUriPermissions`, URIs `content://com.bombless.luaandroid.results/<jobId>/<artifactId>` |
+| AIDL / parcelable package | `com.bombless.luaandroid.ipc` |
+| AIDL sources | [`ipc-api/src/main/aidl/com/bombless/luaandroid/ipc/`](ipc-api/src/main/aidl/com/bombless/luaandroid/ipc/): `ILuaRuntimeService`, `IJobCallback`, `ILuaRocksService`, parcelable declarations |
+| Parcelables | `JobRequest`, `InputFile`, `JobInfo`, `ArtifactInfo`, `RockOptions`, `RockInfo`, `RockOperation` ([`ipc-api/src/main/kotlin/`](ipc-api/src/main/kotlin/com/bombless/luaandroid/ipc/)) |
+| Client artifacts (each release) | `lua-android-ipc-api-<version>.aar`, `lua-android-ipc-api-sources-<version>.zip` (AIDL + Kotlin sources) |
+| Client manifest requirements | `<uses-permission …USE_LUA_RUNTIME/>` and `<queries><package android:name="com.bombless.luaandroid"/></queries>` |
+| Lua / LuaRocks | Lua 5.4.9, LuaRocks 3.13.0 |
+
+### 11.2 Where the implementation settles open points of sections 3–6
+
+- **No JNI.** The runtime is a native *executable* (`libluart.so`, built with the NDK for each ABI, extracted to `nativeLibraryDir`), started once per job. This
+  gives hard timeouts and cancellation by `SIGKILL`, crash isolation and an exact memory ceiling, and makes "JNI loading per ABI" (checklist 2) a question of
+  "does the runner start per ABI".
+- **`submit()` finishes staging before it returns.** Script and input descriptors are copied into the job directory first, so the caller may close them
+  immediately and `QUEUED` means "persisted". Only regular files are accepted.
+- **Wire format.** Every parcelable is `[int version][int length][payload]`; readers skip unknown trailing fields and bound all counts. `JobRequest.environment` is
+  a `Bundle` in the API but is transmitted as plain string pairs.
+- **States** are `int` constants in `JobState` (`QUEUED=0 … TIMED_OUT=5`); unknown values `>= 2` are terminal. `cancel()` is idempotent: `true` for queued/running/already
+  cancelled jobs, `false` for jobs that finished otherwise.
+- **Error codes** are the ones of section 7 plus `UNSUPPORTED_API_VERSION`, `MEMORY_LIMIT_EXCEEDED` and `RESULT_NOT_SERIALIZABLE`. Rejected calls throw Binder-safe
+  exceptions whose message is `"CODE: details"` (`SecurityException`, `IllegalArgumentException`, `IllegalStateException`); script failures are job states, not exceptions.
+- **Artifacts.** Opaque IDs `stdout`, `stderr`, `result`, `f1…` (files written to `output/`, ≤ 64). `stdout`/`stderr` are readable while the job runs.
+  `JobInfo.returnValueJson` is filled only when ≤ 32 KiB. The JSON conversion policy is in README "Return values".
+- **Authorisation.** Caller = `Binder.getCallingUid()` → packages → pinned SHA-256 of the signing certificate (trust on first use, approved in the *Access* tab);
+  apps with the host's own signature are trusted for running scripts unless disabled; `ILuaRocksService` needs a separate grant. Unknown callers are recorded and notified.
+  Unknown, malformed and foreign job IDs are indistinguishable (`JOB_NOT_FOUND`).
+- **LuaRocks (section 5).** The real LuaRocks 3.13.0 runs on a pure-Lua stack inside the runner; downloads go through a host bridge (HTTPS, allow-listed hosts, size cap,
+  no blind redirects); process spawning is disabled; native build back-ends are replaced by stubs reporting `NATIVE_ROCK_UNSUPPORTED`. Native rocks are therefore
+  supported only as prebuilt `.so` files for the device ABI placed in the tree by the owner.
+
+### 11.3 Checklist (section 9)
+
+| # | Item | Status |
+|---|---|---|
+| 1 | Application ID, structure, SDK levels, ABIs | Done (11.1). Modules: `ipc-api`, `app`, `client-example`, plus `runner/` (C/Lua). |
+| 2 | Lua runtime per ABI | Done as an executable instead of JNI. CI builds all three ABIs and checks ELF type, architecture, PIE and 16 KB alignment; the x86_64 build is executed by the acceptance tests. arm64-v8a and armeabi-v7a are built but not executed in CI (no ARM emulator). |
+| 3 | AIDL, binding, caller authorisation | Done. |
+| 4 | Persistence, queue, workers, state machine, cancellation, cleanup | Done (`JobManager`, `RunnerLauncher`). |
+| 5 | PFD staging, result ContentProvider, URI grants | Done (`ResultProvider`, prefix grants per job and owner package, revoked when a job is deleted). |
+| 6 | Output capture, JSON result, artifact listing | Done (`bootstrap.lua`, `ResultCollector`). |
+| 7 | LuaRocks with private tree/config, pure-Lua packages | Done; tested against a mock server and against luarocks.org in the emulator. |
+| 8 | Native rock policy | Pure-Lua only; unsupported rocks fail with `NATIVE_ROCK_UNSUPPORTED` and an explanation. No on-device compilation. |
+| 9 | Example client and instrumentation tests with a separate package/UID | Done (`client-example`). |
+| 10 | Process death, restart, binder death, large files, malicious paths, permission denial, cancellation, timeout | Process death, large files (64 MiB), malicious paths, permission denial, cancellation and timeouts are automated. Device restart shares the recovery path of process death (state is fsynced) but is not separately automated. Binder death is handled with `RemoteCallbackList` (dead callbacks are dropped); the client side is covered by re-binding in the restart test. |
+| 11 | Publish identifiers, AIDL, tested sample code | This section; sample code below. |
+
+### 11.4 Acceptance tests (section 10) → automated tests
+
+The cross-app tests run in `client-example` (a different UID) against the installed host on an Android 14 emulator
+([`client-example/src/androidTest/`](client-example/src/androidTest/java/com/bombless/luaandroid/example/)).
+
+| Acceptance criterion | Test |
+|---|---|
+| A second app binds without sharing the Lua implementation | `RuntimeAcceptanceTest.anotherAppCanBindWithoutEmbeddingLua` |
+| Submit returns a job ID quickly | `submitReturnsQuicklyAndTheJobProducesStdoutAndAJsonResult` |
+| Large input without Binder failure or loading it into memory | `largeInputAndScriptTravelByDescriptorNotByBinder` (64 MiB input, script above the inline limit; the script seeks and reads only the tail) |
+| QUEUED/RUNNING/terminal states; stdout/stderr/result artifacts | `stateMachineQueuedRunningTerminalAndCancellation`, `submitReturnsQuickly…`, `generatedFilesAreArtifactsReadableThroughDescriptorAndContentUri` |
+| Callback loss or service restart keeps persisted state reachable | `jobsSurviveTheDeathOfTheHostProcess`, `callbacksReportMonotonicStateChanges` |
+| A caller cannot read another caller's jobs/artifacts | `AccessControlTest.callersCannotSeeEachOthersJobsOrArtifacts`, `unknownAppsAreRejectedUntilTheOwnerApprovesAndApprovalIsRevocable` |
+| Path traversal and unauthorised file access are rejected | `invalidRequestsAreRejectedBeforeAnythingIsStaged`, `argumentsEnvironmentAndTheSandbox`; sandbox details in `runner/tests/run_tests.py` (`path_confinement`, `forbidden_functions`, …) |
+| Timeout and cancellation reach terminal states and clean up | `timeoutKillsTheJob`, `stateMachineQueuedRunningTerminalAndCancellation`, `perCallerQueueLimit`; kill paths in `runner/tests/run_tests.py` (`timeout_*`, `sigterm_is_cancellation`) |
+| Pure-Lua LuaRocks install and `require()` | `RocksAcceptanceTest.pureLuaRockInstallsWithItsDependenciesAndScriptsCanRequireIt` |
+| Native rocks fail with an actionable error | `RocksAcceptanceTest.nativeRocksAreRefusedWithAnActionableError` |
+
+Further layers: 38 JVM unit tests (`app/src/test`), 32 + 13 native runner / LuaRocks tests (`runner/tests`), and an owner-UI smoke test (`app/src/androidTest`).
+
+### 11.5 Tested sample code
+
+[`client-example/src/main/java/com/bombless/luaandroid/example/MainActivity.kt`](client-example/src/main/java/com/bombless/luaandroid/example/MainActivity.kt) binds,
+submits, polls and reads artifacts using only the published API; the acceptance tests above exercise the same calls (inline source, `scriptFd`, `inputFiles`, callbacks,
+`getJob`/`listJobs`, `cancel`, `openResult`, content URIs, `ILuaRocksService`).
