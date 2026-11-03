@@ -22,8 +22,16 @@ note "example client manifest (queries)"
 "${ANDROID_HOME:-/usr/local/lib/android/sdk}"/build-tools/*/aapt2 dump xmltree --file AndroidManifest.xml client-example/build/outputs/apk/debug/client-example-debug.apk 2>&1 | grep -iE "queries|package|uses-permission|name=" | head -20 | tee -a emulator-diag.txt
 
 adb logcat -c || true
-# 1) cross-app acceptance tests (the example client is the test target), 2) the owner UI smoke test (host app is the target)
-./gradlew --no-daemon --stacktrace --console=plain --continue :client-example:connectedDebugAndroidTest :app:connectedDebugAndroidTest 2>&1 | tee -a gradle-emulator.log
-status=${PIPESTATUS[0]}
+# The two instrumentation runs must not overlap: connected*AndroidTest installs and afterwards UNINSTALLS the app
+# under test, and the cross-app tests need the host app to stay installed. Hence two sequential Gradle runs.
+# 1) cross-app acceptance tests: the example client is the test target, the host app is installed beforehand.
+./gradlew --no-daemon --stacktrace --console=plain --no-parallel :client-example:connectedDebugAndroidTest 2>&1 | tee -a gradle-emulator.log
+status_client=${PIPESTATUS[0]}
 adb logcat -d -v time > logcat.txt || true
-exit "$status"
+# 2) owner UI smoke test: the host app itself is the test target.
+adb logcat -c || true
+./gradlew --no-daemon --stacktrace --console=plain --no-parallel :app:connectedDebugAndroidTest 2>&1 | tee -a gradle-emulator.log
+status_ui=${PIPESTATUS[0]}
+adb logcat -d -v time >> logcat.txt || true
+echo "client acceptance tests: exit $status_client; owner UI smoke test: exit $status_ui" | tee -a emulator-diag.txt
+[ "$status_client" -eq 0 ] && [ "$status_ui" -eq 0 ]

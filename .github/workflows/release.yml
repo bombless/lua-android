@@ -1,0 +1,174 @@
+name: Release
+
+# Push a tag such as v1.0.0 to build, verify and publish a GitHub release with the APKs.
+#   git tag v1.0.0 && git push origin v1.0.0
+# Tags with a suffix (v1.1.0-rc.1) are published as pre-releases.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  ANDROID_NDK_VERSION: 27.2.12479018
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Version
+        id: version
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          ver="${tag#v}"
+          if [[ ! "$ver" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(-([A-Za-z]+)\.?([0-9]+)?)?$ ]]; then
+            echo "Tag '$tag' is not of the form vMAJOR.MINOR.PATCH[-suffix.N]" >&2; exit 1
+          fi
+          major=${BASH_REMATCH[1]}; minor=${BASH_REMATCH[2]}; patch=${BASH_REMATCH[3]}
+          pre=${BASH_REMATCH[4]}; n=${BASH_REMATCH[6]:-0}
+          # versionCode grows with the version; a final release sorts above its own pre-releases.
+          if [ -n "$pre" ]; then rc=$(( n > 98 ? 98 : n )); else rc=99; fi
+          code=$(( major * 1000000 + minor * 10000 + patch * 100 + rc ))
+          echo "name=$ver" >> "$GITHUB_OUTPUT"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$([ -n "$pre" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "Version $ver (versionCode $code)"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Android SDK packages
+        shell: bash
+        run: scripts/ci-setup-android.sh
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Signing key
+        id: signing
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          ks="$RUNNER_TEMP/release.jks"
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$ks"
+            echo "mode=repository key" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::No signing secrets are configured: using a throw-away key for this release (see scripts/setup-signing.sh)."
+            KEYSTORE_PASSWORD=$(openssl rand -hex 16); KEY_PASSWORD=$KEYSTORE_PASSWORD; KEY_ALIAS=ephemeral
+            keytool -genkeypair -keystore "$ks" -alias "$KEY_ALIAS" -keyalg RSA -keysize 4096 -validity 3650 \
+              -storepass "$KEYSTORE_PASSWORD" -keypass "$KEY_PASSWORD" -dname "CN=Lua Android release $GITHUB_REF_NAME (throw-away key)"
+            echo "mode=throw-away key" >> "$GITHUB_OUTPUT"
+          fi
+          {
+            echo "RELEASE_KEYSTORE_FILE=$ks"
+            echo "RELEASE_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+            echo "RELEASE_KEY_ALIAS=$KEY_ALIAS"
+            echo "RELEASE_KEY_PASSWORD=$KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+
+      - name: Test and build
+        shell: bash
+        run: |
+          ./gradlew --no-daemon --stacktrace --console=plain \
+            -PversionName='${{ steps.version.outputs.name }}' -PversionCode='${{ steps.version.outputs.code }}' \
+            :app:testDebugUnitTest :app:assembleRelease :client-example:assembleRelease :ipc-api:assembleRelease 2>&1 | tee gradle.log
+
+      - name: Verify and collect
+        id: collect
+        shell: bash
+        run: |
+          ver='${{ steps.version.outputs.name }}'
+          scripts/verify-apk.sh app/build/outputs/apk/release/app-release.apk release
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk "dist/lua-android-$ver.apk"
+          cp client-example/build/outputs/apk/release/client-example-release.apk "dist/lua-android-client-example-$ver.apk"
+          cp ipc-api/build/outputs/aar/ipc-api-release.aar "dist/lua-android-ipc-api-$ver.aar"
+          (cd ipc-api/src/main && zip -qr "$GITHUB_WORKSPACE/dist/lua-android-ipc-api-sources-$ver.zip" aidl kotlin)
+          sdk="${ANDROID_HOME}"; bt=$(ls -d "$sdk"/build-tools/* | sort -V | tail -1)
+          # the example client must carry the same signature as the host, or the host would not trust it automatically
+          h=$("$bt/apksigner" verify --print-certs "dist/lua-android-$ver.apk" | grep 'SHA-256 digest' | head -1 | awk '{print $NF}')
+          c=$("$bt/apksigner" verify --print-certs "dist/lua-android-client-example-$ver.apk" | grep 'SHA-256 digest' | head -1 | awk '{print $NF}')
+          [ "$h" = "$c" ] || { echo "host and example client are signed with different keys" >&2; exit 1; }
+          echo "cert=$h" >> "$GITHUB_OUTPUT"
+          (cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt)
+          ls -la dist
+
+      - name: Release notes
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.name }}
+          SIGNING: ${{ steps.signing.outputs.mode }}
+          CERT: ${{ steps.collect.outputs.cert }}
+        run: |
+          prev=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
+          range=${prev:+$prev..}${GITHUB_REF_NAME}
+          {
+            echo "# Lua Android $VERSION"
+            echo
+            echo "A cross-app Lua 5.4 runtime for Android: other apps submit scripts over Binder and get stdout, a JSON result and files back; LuaRocks installs pure-Lua packages."
+            echo
+            echo "## Download"
+            echo "| File | What it is |"
+            echo "|---|---|"
+            echo "| \`lua-android-$VERSION.apk\` | **The app.** Android 8.0+ (API 26); arm64-v8a, armeabi-v7a and x86_64 in one APK. |"
+            echo "| \`lua-android-client-example-$VERSION.apk\` | Example client app (a second app/UID talking to the first). Signed with the same key, so it is trusted automatically. |"
+            echo "| \`lua-android-ipc-api-$VERSION.aar\` / \`-sources-$VERSION.zip\` | The client library: AIDL interfaces, parcelables, helper. |"
+            echo "| \`SHA256SUMS.txt\` | Checksums. |"
+            echo
+            echo "## Install"
+            echo "1. Download \`lua-android-$VERSION.apk\` on the phone and open it (allow *Install unknown apps* for your browser if asked)."
+            echo "2. Open **Lua Android**, tap **Run** on the first tab. Other apps ask for access on the **Access** tab."
+            echo "3. To use it from your own app see the README section *Using the runtime from another app*."
+            echo
+            echo "## Verification"
+            echo "- Signing: $SIGNING. Certificate SHA-256: \`$CERT\`"
+            if [ "$SIGNING" = "throw-away key" ]; then
+              echo "- This release was signed with a one-off key because the repository has no signing secrets yet. It installs and runs normally, but the next release will have a different signature: **uninstall this version before installing the next**."
+            fi
+            echo "- Built by GitHub Actions from \`${GITHUB_SHA::12}\` (workflow run $GITHUB_RUN_ID). Lua 5.4.9, LuaRocks 3.13.0."
+            echo
+            echo "## Changes"
+            git log --no-merges --pretty='- %s' "$range" | head -40
+          } > RELEASE_NOTES.md
+          cat RELEASE_NOTES.md
+
+      - name: Publish release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+          VERSION: ${{ steps.version.outputs.name }}
+        run: |
+          flags=(); [ "$PRERELEASE" = true ] && flags+=(--prerelease)
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+            gh release edit "$GITHUB_REF_NAME" --title "Lua Android $VERSION" --notes-file RELEASE_NOTES.md "${flags[@]}"
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* --title "Lua Android $VERSION" --notes-file RELEASE_NOTES.md --verify-tag "${flags[@]}"
+          fi
+
+      - name: Post failure diagnostics
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/ci-test-summary.py 'app/build/test-results/**/*.xml' > test-summary.txt || true
+          scripts/ci-post-log.sh "release ${GITHUB_REF_NAME}" gradle.log test-summary.txt
