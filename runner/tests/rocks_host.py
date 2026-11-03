@@ -21,13 +21,14 @@ def stage_runtime(dest):
 class RocksResult:
     def __init__(self): self.log, self.stderr, self.done, self.requests, self.rc = "", "", None, [], None
 
-def run_rocks(args, *, runtime, tree, work, servers, allowed_hosts=("127.0.0.1",), binary=None, timeout=120, max_bytes=64 << 20, extra_env=None, timeout_ms=100000):
+def run_rocks(args, *, root, tree, work, servers, allowed_hosts=("127.0.0.1",), binary=None, timeout=120, max_bytes=64 << 20, extra_env=None, timeout_ms=100000):
     binary = binary or os.environ.get("LUART", os.path.join(HERE, "..", "build", "host", "luart"))
     home, tmp, conf = (os.path.join(work, d) for d in ("home", "tmp", "etc"))
     for d in (home, tmp, conf): os.makedirs(d, exist_ok=True)
     env = {"PATH": "/nonexistent", "HOME": home, "TMPDIR": tmp, "LUART_TREE": tree, "LUART_CONF_DIR": conf, "LUART_SERVERS": " ".join(servers)}
     env.update(extra_env or {})
-    p = subprocess.Popen([binary, "rocks", "--runtime", runtime, "--timeout-ms", str(timeout_ms), "--"] + list(args), stdin=subprocess.PIPE,
+    p = subprocess.Popen([binary, "rocks", "--runtime", os.path.join(root, "runtime"), "--luarocks", os.path.join(root, "luarocks"),
+                          "--timeout-ms", str(timeout_ms), "--"] + list(args), stdin=subprocess.PIPE,
                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, cwd=work)
     res = RocksResult()
     err_chunks = []

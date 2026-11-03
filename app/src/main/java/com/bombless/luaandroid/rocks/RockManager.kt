@@ -2,6 +2,7 @@ package com.bombless.luaandroid.rocks
 
 import android.content.Context
 import android.os.SystemClock
+import android.util.Log
 import com.bombless.luaandroid.BuildConfig
 import com.bombless.luaandroid.core.AppSettings
 import com.bombless.luaandroid.core.Ids
@@ -127,7 +128,7 @@ class RockManager(
     fun listInstalled(): List<RockInfo> {
         val out = StringBuilder()
         val run = runLuaRocks(listOf("list", "--porcelain"), 30_000, { false }) { out.append(it) }
-        if (run.exitCode != 0) throw ServiceError(ErrorCode.INTERNAL_ERROR, "could not list installed rocks")
+        if (run.exitCode != 0) throw failure("could not list installed rocks", run.exitCode, out)
         return out.lines().map { it.trim('\r') }.filter { it.isNotBlank() }.mapNotNull { line ->
             val p = line.split('\t')
             if (p.size < 2) null else RockInfo().also { it.name = p[0]; it.version = p[1]; it.status = p.getOrNull(2) ?: "installed" }
@@ -138,7 +139,7 @@ class RockManager(
     fun rocksPath(): String {
         val out = StringBuilder()
         val run = runLuaRocks(listOf("path"), 30_000, { false }) { out.append(it) }
-        if (run.exitCode != 0) throw ServiceError(ErrorCode.INTERNAL_ERROR, "could not compute the rocks path")
+        if (run.exitCode != 0) throw failure("could not compute the rocks path", run.exitCode, out)
         return out.toString().trim()
     }
 
@@ -179,6 +180,11 @@ class RockManager(
             }
         }
         notifyListeners()
+    }
+
+    private fun failure(what: String, exitCode: Int, output: CharSequence): ServiceError {
+        Log.w(TAG, "$what (exit $exitCode): ${output.toString().takeLast(1500)}")
+        return ServiceError(ErrorCode.INTERNAL_ERROR, "$what (exit $exitCode)${lastErrorLine(output.toString())?.let { ": $it" } ?: ""}")
     }
 
     private class RockRun(val exitCode: Int, val done: JSONObject?, val timedOut: Boolean, val cancelled: Boolean)
@@ -298,6 +304,7 @@ class RockManager(
     }
 
     companion object {
+        private const val TAG = "LuaRocks"
         private const val LOG_CAP = 64 * 1024
         private const val MAX_LINE = 64 * 1024
         private const val OPERATION_TIMEOUT_MS = 10L * 60 * 1000

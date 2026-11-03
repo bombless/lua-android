@@ -44,9 +44,9 @@ class RocksAcceptanceTest {
 
     @After
     fun tearDown() {
-        repo.close()
-        ctx.unbindService(connection)
-        client.unbind()
+        if (::repo.isInitialized) repo.close()
+        if (::connection.isInitialized) ctx.unbindService(connection)
+        if (::client.isInitialized) client.unbind()
         Host.control("wipe_rocks")
         Host.control("reset")
     }

@@ -36,7 +36,15 @@ local TMPDIR = env("TMPDIR", HOME .. "/tmp")
 local CACHE = HOME .. "/cache"
 local SERVERS = env("LUART_SERVERS", "https://luarocks.org")
 
-package.path = RUNTIME .. "/?.lua;" .. RUNTIME .. "/?/init.lua;" .. RUNTIME .. "/shims/?.lua"
+-- LuaRocks' modules are named "luarocks.*": the directory that CONTAINS the luarocks/ folder goes on the path.
+-- Device layout: files/lua/runtime (this file, shims) and files/lua/luarocks (LuaRocks sources) side by side.
+local LUAROCKS_DIR = opts.luarocks or (RUNTIME .. "/luarocks")
+local LUAROCKS_ROOT, LUAROCKS_NAME = LUAROCKS_DIR:match("^(.*)/([^/]+)$")
+if LUAROCKS_NAME ~= "luarocks" then
+  io.stderr:write("luart rocks: --luarocks must point to a directory named 'luarocks' (got " .. LUAROCKS_DIR .. ")\n")
+  return 64
+end
+package.path = RUNTIME .. "/?.lua;" .. RUNTIME .. "/shims/?.lua;" .. LUAROCKS_ROOT .. "/?.lua"
 package.cpath = ""
 
 local lfs = require("lfs")

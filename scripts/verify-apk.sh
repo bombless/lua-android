@@ -35,7 +35,8 @@ done
 ok "runner binaries are PIE executables of the right architecture (64-bit ones 16 KB aligned)"
 
 manifest=$("$bt/aapt2" dump xmltree --file AndroidManifest.xml "$apk")
-echo "$manifest" | grep -q "extractNativeLibs.*=(type 0x12)0xffffffff" || fail "extractNativeLibs is not true: the runner would not be extracted to nativeLibraryDir"
+# extractNativeLibs defaults to true when the attribute is absent (AGP legacy packaging); only an explicit false breaks the runner.
+echo "$manifest" | grep -q "extractNativeLibs.*=(type 0x12)0x0$" && fail "extractNativeLibs is false: the runner would not be extracted to nativeLibraryDir"
 echo "$manifest" | grep -q "com.bombless.luaandroid.permission.USE_LUA_RUNTIME" || fail "service permission missing"
 echo "$manifest" | grep -q "com.bombless.luaandroid.action.BIND_RUNTIME" || fail "BIND_RUNTIME action missing"
 echo "$manifest" | grep -q "com.bombless.luaandroid.results" || fail "result provider missing"

@@ -14,6 +14,7 @@ import java.util.zip.ZipOutputStream
  */
 class MockRocksServer : AutoCloseable {
     private val files = HashMap<String, ByteArray>()
+    private val manifestEntries = ArrayList<Pair<String, String>>() // must precede init{}: Kotlin initialises in textual order
     private val server = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))
     @Volatile private var running = true
     val requests = java.util.concurrent.CopyOnWriteArrayList<String>()
@@ -36,8 +37,6 @@ class MockRocksServer : AutoCloseable {
             }
         }, "mock-rocks-server").apply { isDaemon = true }.start()
     }
-
-    private val manifestEntries = ArrayList<Pair<String, String>>()
 
     private fun manifest(): String {
         val byName = manifestEntries.groupBy({ it.first }, { it.second })

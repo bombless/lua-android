@@ -18,12 +18,12 @@ class Env:
         self.repo = os.path.join(self.work, "repo")
         mockrepo.build_repo(self.repo, rocks)
         self.srv, self.url = H.serve(self.repo)
-        self.rt = os.path.join(self.work, "rt")
-        H.stage_runtime(self.rt)
+        self.root = os.path.join(self.work, "lua")   # <root>/runtime + <root>/luarocks, like files/lua on device
+        H.stage_runtime(self.root)
         self.tree = os.path.join(self.work, "tree")
         self.allowed = allowed
     def lr(self, *args, **kw):
-        return H.run_rocks(args, runtime=self.rt, tree=self.tree, work=self.work, servers=[self.url], allowed_hosts=self.allowed, **kw)
+        return H.run_rocks(args, root=self.root, tree=self.tree, work=self.work, servers=[self.url], allowed_hosts=self.allowed, **kw)
     def tree_file(self, rel): return os.path.join(self.tree, rel)
     def script(self, src, **kw):
         return harness.run(src, rocks=self.tree, **kw)
