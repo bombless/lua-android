@@ -31,8 +31,11 @@ class TestControlProvider : ContentProvider() {
                 graph.accessStore.pendingRequests().forEach { graph.accessStore.dismissPending(it.packageName) }
                 graph.accessStore.blockedApps().forEach { graph.accessStore.unblock(it.packageName) }
                 graph.settings.trustSameSigner = true
+                graph.settings.rocksServers = com.bombless.luaandroid.core.AppSettings.DEFAULT_SERVERS
+                graph.settings.allowedHosts = com.bombless.luaandroid.core.AppSettings.DEFAULT_HOSTS
             }
             "set_trust" -> graph.settings.trustSameSigner = arg == "true"
+            "set_servers" -> graph.settings.rocksServers = requireNotNull(arg).split("\n")
             "allow" -> {
                 val pkg = requireNotNull(arg)
                 graph.accessStore.allow(pkg, pkg, graph.policy.signingDigests(pkg), extras?.getBoolean("rocks") ?: false, System.currentTimeMillis())

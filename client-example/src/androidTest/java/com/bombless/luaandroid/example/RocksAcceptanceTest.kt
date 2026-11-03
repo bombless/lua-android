@@ -40,6 +40,7 @@ class RocksAcceptanceTest {
         rocks = service
         connection = conn
         repo = MockRocksServer()
+        Host.control("set_servers", repo.url) // searches and installs without an explicit server use the mock, not luarocks.org
     }
 
     @After
@@ -79,6 +80,12 @@ class RocksAcceptanceTest {
         assertEquals(search.log, JobState.SUCCEEDED, search.state)
         assertTrue(search.log, search.log.lines().any { it.startsWith("purelua\t1.0-1") })
         assertTrue(repo.requests.any { it.endsWith("manifest-5.4") })
+
+        // no explicit server: the configured one is used
+        assertEquals(JobState.SUCCEEDED, rocks.await(rocks.installRock("purelua", null, null)).state)
+        val show = rocks.await(rocks.showRock("purelua", null))
+        assertEquals(show.log, JobState.SUCCEEDED, show.state)
+        assertTrue(show.log, show.log.contains("purelua 1.0-1") && show.log.contains("helperlib"))
     }
 
     @Test

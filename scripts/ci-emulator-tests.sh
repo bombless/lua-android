@@ -22,7 +22,8 @@ note "example client manifest (queries)"
 "${ANDROID_HOME:-/usr/local/lib/android/sdk}"/build-tools/*/aapt2 dump xmltree --file AndroidManifest.xml client-example/build/outputs/apk/debug/client-example-debug.apk 2>&1 | grep -iE "queries|package|uses-permission|name=" | head -20 | tee -a emulator-diag.txt
 
 adb logcat -c || true
-./gradlew --no-daemon --stacktrace --console=plain :client-example:connectedDebugAndroidTest 2>&1 | tee -a gradle-emulator.log
+# 1) cross-app acceptance tests (the example client is the test target), 2) the owner UI smoke test (host app is the target)
+./gradlew --no-daemon --stacktrace --console=plain --continue :client-example:connectedDebugAndroidTest :app:connectedDebugAndroidTest 2>&1 | tee -a gradle-emulator.log
 status=${PIPESTATUS[0]}
 adb logcat -d -v time > logcat.txt || true
 exit "$status"
