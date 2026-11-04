@@ -33,5 +33,9 @@ adb logcat -c || true
 ./gradlew --no-daemon --stacktrace --console=plain --no-parallel :app:connectedDebugAndroidTest 2>&1 | tee -a gradle-emulator.log
 status_ui=${PIPESTATUS[0]}
 adb logcat -d -v time >> logcat.txt || true
+# screenshots left by the UI smoke test (adb pull works on the shared storage even after the app was uninstalled)
+mkdir -p screenshots
+for f in $(adb shell ls /sdcard/Download 2>/dev/null | tr -d '\r' | grep -E '^lua-.*\.png$'); do adb pull "/sdcard/Download/$f" screenshots/ > /dev/null 2>&1 || true; done
+ls -la screenshots | tee -a emulator-diag.txt
 echo "client acceptance tests: exit $status_client; owner UI smoke test: exit $status_ui" | tee -a emulator-diag.txt
 [ "$status_client" -eq 0 ] && [ "$status_ui" -eq 0 ]
