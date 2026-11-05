@@ -6,6 +6,7 @@ import android.os.Process
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -72,6 +73,12 @@ class UiSmokeTest {
         return null
     }
 
+    private fun findScroll(root: View): ScrollView? {
+        if (root is ScrollView) return root
+        if (root is ViewGroup) for (i in 0 until root.childCount) findScroll(root.getChildAt(i))?.let { return it }
+        return null
+    }
+
     private fun screenshot(name: String) {
         Thread.sleep(1_000) // let layout and async content settle
         val pfd = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand("screencap -p /sdcard/Download/lua-$name.png")
@@ -103,14 +110,20 @@ class UiSmokeTest {
 
             scenario.onActivity { it.show(MainActivity.TAB_JOBS) }
             screenshot("3-jobs")
+            scenario.onActivity { a -> findButton(a.window.decorView, "Details")?.performClick() }
+            screenshot("3b-jobs-details")
             var listed = false
             scenario.onActivity { a -> listed = texts(a.window.decorView).any { it == "SUCCEEDED" } }
             assertTrue("the Jobs tab lists the job", listed)
 
             scenario.onActivity { it.show(MainActivity.TAB_ROCKS) }
             screenshot("4-rocks")
+            scenario.onActivity { a -> findScroll(a.window.decorView)?.fullScroll(View.FOCUS_DOWN) }
+            screenshot("4b-rocks-bottom")
             scenario.onActivity { it.show(MainActivity.TAB_ACCESS) }
             screenshot("5-access")
+            scenario.onActivity { a -> findScroll(a.window.decorView)?.fullScroll(View.FOCUS_DOWN) }
+            screenshot("5b-access-bottom")
             scenario.onActivity { it.show(MainActivity.TAB_ABOUT) }
             screenshot("6-about")
         }
