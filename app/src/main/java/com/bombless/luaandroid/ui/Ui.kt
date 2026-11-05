@@ -101,7 +101,8 @@ object Ui {
         setTextColor(TEXT)
         textSize = 13.5f
         if (mono) typeface = Typeface.MONOSPACE
-        inputType = if (multiline) InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES.inv()
+        // NO_SUGGESTIONS keeps the keyboard from "correcting" code and rock names.
+        inputType = if (multiline) InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
         else InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
         if (multiline) { gravity = Gravity.TOP or Gravity.START; isSingleLine = false }
         setPadding(dp(ctx, 10), dp(ctx, 8), dp(ctx, 10), dp(ctx, 8))

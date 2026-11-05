@@ -21,30 +21,19 @@ jobs:
   runner:
     name: Native runner (host tests)
     runs-on: ubuntu-latest
-    permissions:
-      contents: write # failure diagnostics are posted as a commit comment
     steps:
       - uses: actions/checkout@v4
       - name: Install build dependencies
         run: sudo apt-get update -qq && sudo apt-get install -y -qq zlib1g-dev
       - name: Build the runner
-        shell: bash
-        run: make -C runner 2>&1 | tee build.log
+        run: make -C runner
       - name: Run the runner and LuaRocks tests
-        shell: bash
-        run: make -C runner test 2>&1 | tee test.log
-      - name: Post failure diagnostics
-        if: failure()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: scripts/ci-post-log.sh "runner tests" build.log test.log
+        run: make -C runner test
 
   # ---------------------------------------------------------------------------------------------
   android:
     name: Android build, unit tests, APK checks
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -53,34 +42,25 @@ jobs:
           java-version: 17
       - name: Android SDK packages
         shell: bash
-        run: scripts/ci-setup-android.sh 2>&1 | tee sdk.log
+        run: scripts/ci-setup-android.sh
       - uses: gradle/actions/setup-gradle@v4
       - name: Unit tests, debug and release builds
         shell: bash
         run: |
           ./gradlew --no-daemon --stacktrace --console=plain \
             :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease \
-            :client-example:assembleDebug :client-example:assembleRelease :ipc-api:assembleRelease 2>&1 | tee gradle.log
+            :client-example:assembleDebug :client-example:assembleRelease :ipc-api:assembleRelease
       - name: Verify the APKs
         shell: bash
         run: |
           scripts/verify-apk.sh app/build/outputs/apk/debug/app-debug.apk debug
           scripts/verify-apk.sh app/build/outputs/apk/release/app-release.apk release
-      - name: Post failure diagnostics
-        if: failure()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          python3 scripts/ci-test-summary.py 'app/build/test-results/**/*.xml' > test-summary.txt || true
-          scripts/ci-post-log.sh "android build" gradle.log test-summary.txt sdk.log
 
   # ---------------------------------------------------------------------------------------------
   emulator:
     name: Acceptance tests (Android 14 emulator, two apps)
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -89,7 +69,7 @@ jobs:
           java-version: 17
       - name: Android SDK packages
         shell: bash
-        run: scripts/ci-setup-android.sh 2>&1 | tee sdk.log
+        run: scripts/ci-setup-android.sh
       - uses: gradle/actions/setup-gradle@v4
       - name: Enable KVM
         run: |
@@ -118,22 +98,3 @@ jobs:
             app/build/reports/androidTests/
           if-no-files-found: ignore
           retention-days: 14
-      - name: Publish screenshots for review (temporary)
-        if: always() && github.ref == 'refs/heads/claude'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          ls screenshots/*.png > /dev/null 2>&1 || exit 0
-          rm -rf /tmp/shots && mkdir /tmp/shots && cp screenshots/*.png /tmp/shots/
-          cd /tmp/shots && git init -q -b ci-screenshots && git config user.name github-actions && git config user.email actions@users.noreply.github.com
-          git add -A && git commit -q -m "UI screenshots for ${GITHUB_SHA::8}"
-          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git push -q -f origin ci-screenshots
-      - name: Post failure diagnostics
-        if: failure()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          python3 scripts/ci-test-summary.py 'client-example/build/outputs/androidTest-results/**/*.xml' 'app/build/outputs/androidTest-results/**/*.xml' > test-summary.txt || true
-          grep -iE "AndroidRuntime|FATAL|luaandroid|LuaRuntime|LuaRocks|lua-job|rocks-" logcat.txt 2>/dev/null | tail -150 > logcat-filtered.txt || true
-          scripts/ci-post-log.sh "emulator acceptance tests" emulator-diag.txt test-summary.txt logcat-filtered.txt gradle-emulator.log

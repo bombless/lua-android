@@ -18,12 +18,6 @@ class AboutPanel(activity: MainActivity) : Panel(activity) {
             orientation = LinearLayout.VERTICAL
             setPadding(Ui.dp(ctx, 16), Ui.dp(ctx, 4), Ui.dp(ctx, 16), Ui.dp(ctx, 24))
         }
-        col.addView(Ui.heading(ctx, "Runtime"))
-        col.addView(info)
-        col.addView(Ui.heading(ctx, "Settings"))
-        col.addView(stepper("Keep finished jobs for", retention, { settings.retentionDays -= 1; refresh() }, { settings.retentionDays += 1; refresh() }))
-        col.addView(Ui.space(ctx, 6))
-        col.addView(stepper("Parallel jobs (after restart)", concurrency, { settings.maxConcurrentJobs -= 1; refresh() }, { settings.maxConcurrentJobs += 1; refresh() }))
         col.addView(Ui.heading(ctx, "Trust model"))
         col.addView(Ui.text(ctx,
             "Every job runs in its own process with a fresh Lua 5.4 state, a hard deadline, a memory ceiling, capped output and a private working directory " +
@@ -31,6 +25,12 @@ class AboutPanel(activity: MainActivity) : Panel(activity) {
                 "This is process-level isolation inside this app's Android sandbox, NOT a separate UID: a bug in the Lua VM or in a prebuilt native rock could in principle read this app's data. " +
                 "Install only rocks you trust, and approve only apps you trust.",
             13f, Ui.TEXT))
+        col.addView(Ui.heading(ctx, "Settings"))
+        col.addView(stepper("Keep finished jobs for", retention, { settings.retentionDays -= 1; refresh() }, { settings.retentionDays += 1; refresh() }))
+        col.addView(Ui.space(ctx, 6))
+        col.addView(stepper("Parallel jobs (after restart)", concurrency, { settings.maxConcurrentJobs -= 1; refresh() }, { settings.maxConcurrentJobs += 1; refresh() }))
+        col.addView(Ui.heading(ctx, "Runtime (what getRuntimeInfo() returns to clients)"))
+        col.addView(info)
         col.addView(Ui.heading(ctx, "Open source"))
         col.addView(Ui.text(ctx, "Lua ${"5.4.9"} · LuaRocks ${BuildConfig.LUAROCKS_VERSION} · LuaFileSystem 1.9.0 · lua-zlib 1.4 · LuaSocket ltn12 3.1.0 (all MIT). App version ${BuildConfig.VERSION_NAME}.", 12.5f, Ui.MUTED))
         addView(col)

@@ -27,6 +27,25 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Require a green CI run for this commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Never publish an APK whose acceptance tests did not pass: the CI workflow runs on every branch push.
+          for attempt in $(seq 1 60); do
+            result=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&per_page=50" \
+              --jq '[.workflow_runs[] | select(.name == "CI" and .event == "push")] | sort_by(.created_at) | if length == 0 then "none" else (last | .status + "/" + (.conclusion // "none")) end')
+            echo "CI for $GITHUB_SHA: ${result:-unknown}"
+            case "$result" in
+              completed/success) exit 0 ;;
+              completed/*) echo "::error::CI did not pass for this commit; refusing to publish."; exit 1 ;;
+              none|"") echo "::error::No CI run found for this commit. Push it to a branch (and let CI pass) before tagging."; exit 1 ;;
+            esac
+            sleep 30
+          done
+          echo "::error::Timed out waiting for CI."; exit 1
+
       - name: Version
         id: version
         shell: bash
@@ -89,7 +108,7 @@ jobs:
         run: |
           ./gradlew --no-daemon --stacktrace --console=plain \
             -PversionName='${{ steps.version.outputs.name }}' -PversionCode='${{ steps.version.outputs.code }}' \
-            :app:testDebugUnitTest :app:assembleRelease :client-example:assembleRelease :ipc-api:assembleRelease 2>&1 | tee gradle.log
+            :app:testDebugUnitTest :app:assembleRelease :client-example:assembleRelease :ipc-api:assembleRelease
 
       - name: Verify and collect
         id: collect
@@ -164,11 +183,3 @@ jobs:
           else
             gh release create "$GITHUB_REF_NAME" dist/* --title "Lua Android $VERSION" --notes-file RELEASE_NOTES.md --verify-tag "${flags[@]}"
           fi
-
-      - name: Post failure diagnostics
-        if: failure()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          python3 scripts/ci-test-summary.py 'app/build/test-results/**/*.xml' > test-summary.txt || true
-          scripts/ci-post-log.sh "release ${GITHUB_REF_NAME}" gradle.log test-summary.txt

@@ -1,6 +1,7 @@
 package com.bombless.luaandroid.ui
 
 import android.view.View
+import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Switch
@@ -79,17 +80,19 @@ class AccessPanel(activity: MainActivity) : Panel(activity) {
         if (p.signatureChanged) c.addView(Ui.text(ctx, "Warning: this package was approved before but is now signed with a DIFFERENT key. Only allow it if you re-installed it deliberately.", 12.5f, Ui.ERR))
         if (p.wantsRocks) c.addView(Ui.text(ctx, "It also asked to manage Lua packages (LuaRocks).", 12.5f, Ui.WARN))
         c.addView(Ui.space(ctx, 8))
+        // Two rows: three buttons do not fit side by side on a 320 dp wide screen.
+        val half = { LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f) }
         c.addView(Ui.row(ctx).apply {
-            addView(Ui.button(ctx, "Allow", primary = true) { store.allow(p.packageName, p.label, p.certs, false, System.currentTimeMillis()) })
+            addView(Ui.button(ctx, "Allow", primary = true) { store.allow(p.packageName, p.label, p.certs, false, System.currentTimeMillis()) }, half())
             addView(Ui.space(ctx, 0, 8))
-            addView(Ui.button(ctx, "Allow + packages") {
-                Ui.confirm(ctx, "Allow package management?", "${p.label} will be able to install and remove Lua packages, which then run in scripts of every allowed app.", "Allow") {
-                    store.allow(p.packageName, p.label, p.certs, true, System.currentTimeMillis())
-                }
-            })
-            addView(Ui.space(ctx, 0, 8))
-            addView(Ui.button(ctx, "Deny") { store.deny(p.packageName, System.currentTimeMillis()) })
+            addView(Ui.button(ctx, "Deny") { store.deny(p.packageName, System.currentTimeMillis()) }, half())
         })
+        c.addView(Ui.space(ctx, 8))
+        c.addView(Ui.button(ctx, "Allow + manage Lua packages") {
+            Ui.confirm(ctx, "Allow package management?", "${p.label} will be able to install and remove Lua packages, which then run in scripts of every allowed app.", "Allow") {
+                store.allow(p.packageName, p.label, p.certs, true, System.currentTimeMillis())
+            }
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         return c
     }
 

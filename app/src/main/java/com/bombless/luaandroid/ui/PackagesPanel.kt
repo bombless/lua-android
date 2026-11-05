@@ -55,7 +55,7 @@ class PackagesPanel(activity: MainActivity) : Panel(activity) {
             val urls = serversInput.text.toString().lines().map { it.trim() }.filter { it.isNotEmpty() }
             val bad = urls.firstNotNullOfOrNull { u -> HttpBridge.checkUrl(u, settings.allowedHosts, settings.allowLoopbackHttp)?.let { "$u: $it" } }
             if (urls.isEmpty() || bad != null) Ui.toast(ctx, bad ?: "At least one server is required") else { settings.rocksServers = urls; Ui.toast(ctx, "Saved") }
-        })
+        }, LinearLayout.LayoutParams(-2, -2))
         col.addView(Ui.heading(ctx, "Allowed download hosts"))
         col.addView(hostsBox)
         col.addView(Ui.space(ctx, 6))
@@ -65,7 +65,7 @@ class PackagesPanel(activity: MainActivity) : Panel(activity) {
             val h = hostInput.text.toString().trim().lowercase()
             if (!Regex("[a-z0-9]([a-z0-9.-]*[a-z0-9])?").matches(h)) Ui.toast(ctx, "Enter a host name, not a URL")
             else { settings.allowedHosts = settings.allowedHosts + h; hostInput.setText(""); renderHosts() }
-        })
+        }, LinearLayout.LayoutParams(-2, -2))
         addView(col)
     }
 
