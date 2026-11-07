@@ -164,8 +164,18 @@ jobs:
             fi
             echo "- Built by GitHub Actions from \`${GITHUB_SHA::12}\` (workflow run $GITHUB_RUN_ID). Lua 5.4.9, LuaRocks 3.13.0."
             echo
-            echo "## Changes"
-            git log --no-merges --pretty='- %s' "$range" | head -40
+            if [ -z "$prev" ]; then
+              echo "## What is inside"
+              echo "- A cross-app Binder/AIDL service: submit scripts and input files (by file descriptor), poll or get callbacks, read stdout/stderr, a JSON return value and generated files."
+              echo "- One process per job: hard deadline, memory ceiling, cancellation and output caps; a crashing script cannot take the app down."
+              echo "- Callers are authorised by UID and a pinned signing certificate, with a consent screen in the app; jobs and artifacts are private to their owner."
+              echo "- The real LuaRocks 3.13.0 for pure-Lua packages (installed over HTTPS from allowed hosts); rocks that need a compiler are refused with a clear error."
+              echo "- An example client app and a cross-app acceptance suite (22 tests plus a UI smoke test) that runs on an Android 14 emulator in CI before every release."
+              echo "- Design contract and implementation status: \`Manual.md\` (section 11); usage and trust model: \`README.md\`."
+            else
+              echo "## Changes since $prev"
+              git log --no-merges --pretty='- %s' "$range" | head -40
+            fi
           } > RELEASE_NOTES.md
           cat RELEASE_NOTES.md
 
